@@ -70,9 +70,23 @@ class Params {
      * @param array $array elements to be comma separated.
      * @return string comma separated list of fields.
      */
-    public static function commaStringToArray( $array = array() ) {
-        // imploded string on commas and return
-        return implode( ',', $array );
+    /**
+     * Convert between comma-separated string and array.
+     * 
+     * @param string|array $input Input that can be either a comma-separated string or an array.
+     * @return string A comma-separated string.
+     */
+    public static function commaStringToArray( $input = '' ) {
+        if (is_string($input)) {
+            // If input is a string, split it into array
+            $array = array_filter(array_map('trim', explode(',', $input)));
+        } else {
+            // If input is already an array, use it directly
+            $array = is_array($input) ? $input : array();
+        }
+        
+        // Convert array to comma-separated string
+        return implode(',', $array);
     }
 }
 

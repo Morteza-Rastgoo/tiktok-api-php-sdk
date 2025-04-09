@@ -1,38 +1,14 @@
 <?php
 
-/**
- * Copyright 2024 Justin Stolpe.
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- */
+spl_autoload_register(function ($class) {
+    // Base directory for the namespace prefix
+    $base_dir = __DIR__ . '/../../src/';
 
-/**
- * Register the autoloader for the TikTok API PHP SDK classes.
- *
- * @param string $class rhe fully-qualified class name.
- * @return void
- */
-spl_autoload_register( function ( $class ) {
-    // project-specific namespace prefix
-    $prefix = 'TikTok\\';
+    // Replace namespace separator with directory separator
+    $file = $base_dir . str_replace('\\', '/', $class) . '.php';
 
-    // require our file
-    require str_replace( '\\', '/', substr( $class, strlen( $prefix ) )) . '.php';
-} );
-?>
+    // If the file exists, require it
+    if (file_exists($file)) {
+        require $file;
+    }
+});
