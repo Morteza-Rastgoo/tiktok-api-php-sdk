@@ -1,12 +1,37 @@
 <?php
+// Set PHP upload limits for video files
+ini_set('upload_max_filesize', '50M');
+ini_set('post_max_size', '52M');
 
-// Set session cookie parameters for better persistence
+// Enable output buffering to prevent premature output
+ob_start();
+
+// Standardized session configuration - must be first
 ini_set('session.cookie_lifetime', 3600); // 1 hour
 ini_set('session.gc_maxlifetime', 3600); // 1 hour
-
-// Start the session with a specific name to avoid conflicts
 session_name('tiktok_sdk_session');
-session_start();
+
+
+
+// Get domain from environment
+$domain = getenv('APP_DOMAIN') ?: 'localhost';
+
+// Configure session parameters
+session_set_cookie_params([
+    'lifetime' => 3600,
+    'path' => '/',
+    'domain' => $domain,
+    'secure' => true,
+    'httponly' => true,
+    'samesite' => 'Strict'
+]);
+
+// Start session before any output
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+} else {
+    session_regenerate_id(true);
+}
 
 // Log session information for debugging
 error_log('Login_and_post.php - Session ID: ' . session_id());

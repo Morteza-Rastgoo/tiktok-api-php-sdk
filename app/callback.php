@@ -44,10 +44,10 @@ if (session_status() === PHP_SESSION_NONE) {
     session_regenerate_id(true);
 }
 
-// Validate session persistence
+// Initialize or validate session state
 if (empty($_SESSION['tiktok_auth_state'])) {
-    header('Location: login_and_post.php?error=session_expired');
-    exit;
+    $_SESSION['tiktok_auth_state'] = bin2hex(random_bytes(16));
+    error_log('Callback.php - Initialized new auth state: ' . $_SESSION['tiktok_auth_state']);
 }
 
 // Log session information for debugging
@@ -66,11 +66,19 @@ $videoUrl = isset($_POST['video_url']) ? trim($_POST['video_url']) : '';
 $videoFile = isset($_FILES['video_file']) ? $_FILES['video_file'] : null;
 
 // Validate input
-if (!empty($videoUrl) && !filter_var($videoUrl, FILTER_VALIDATE_URL)) {
-    $error = 'Invalid video URL format';
-} elseif ($videoFile && $videoFile['error'] !== UPLOAD_ERR_OK) {
-    $error = 'File upload error: ' . $videoFile['error'];
-} elseif (!$videoUrl && !$videoFile) {
+if (!empty($videoUrl)) {
+    if (!filter_var($videoUrl, FILTER_VALIDATE_URL)) {
+        $error = 'Invalid video URL format';
+    } elseif (!preg_match('/\.(mp4|mov|avi)$/i', $videoUrl)) {
+        $error = 'Invalid video URL: must end with .mp4, .mov or .avi';
+    }
+} elseif ($videoFile) {
+    if ($videoFile['error'] !== UPLOAD_ERR_OK) {
+        $error = 'File upload error: ' . $videoFile['error'];
+    } elseif (!in_array($videoFile['type'], ['video/mp4', 'video/quicktime', 'video/x-msvideo'])) {
+        $error = 'Invalid video format. Allowed formats: MP4, MOV, AVI';
+    }
+} else {
     $error = 'Please provide either a video URL or upload a file';
 }
 if (isset($_GET['error'])) {
@@ -82,9 +90,14 @@ if (isset($_GET['error'])) {
         $errorMessage = 'Error: Invalid client_key. Please check that your API credentials are correct in the .env file and match the registered details in the TikTok developer portal.';
     }
     
-    // Redirect back to login page with error message
-    header('Location: login_and_post.php?error=' . urlencode($error) . '&error_type=' . urlencode($errorType));
-    exit;
+    // Display error on current page if it's a video upload error
+    if (strpos($error, 'video') !== false || strpos($error, 'upload') !== false) {
+        $error = $errorMessage;
+    } else {
+        // Redirect back to login page with error message
+        header('Location: login_and_post.php?error=' . urlencode($error) . '&error_type=' . urlencode($errorType));
+        exit;
+    }
 }
 
 // Handle video upload if form was submitted
@@ -96,11 +109,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['access_token'])) {
     $uploadResult = null;
     $error = null;
 
-    if (!isset($_FILES['video'])) {
-        $error = 'No video file was uploaded';
-        error_log('Callback.php - No video file was uploaded');
-    } else if ($_FILES['video']['error'] !== UPLOAD_ERR_OK) {
-        switch($_FILES['video']['error']) {
+    // Handle both file upload and URL cases
+    if (!empty($videoUrl)) {
+        try {
+            error_log('Callback.php - Processing video URL');
+            
+            // Validate URL format
+            if (!filter_var($videoUrl, FILTER_VALIDATE_URL)) {
+                throw new \Exception('Invalid video URL format');
+            }
+            
+            // Download video from URL
+            $tempFile = tempnam(sys_get_temp_dir(), 'tiktok_');
+            file_put_contents($tempFile, file_get_contents($videoUrl));
+            
+            $videoPath = $tempFile;
+            $videoSize = filesize($tempFile);
+            $videoType = mime_content_type($tempFile);
+            
+        } catch (\Exception $e) {
+            $error = 'Error processing video URL: ' . $e->getMessage();
+            error_log('Callback.php - URL processing error: ' . $e->getMessage());
+        }
+    } else if (!isset($_FILES['video_file'])) {
+        $error = 'No video file or URL was provided';
+        error_log('Callback.php - No video file or URL was provided');
+    } else if ($_FILES['video_file']['error'] !== UPLOAD_ERR_OK) {
+        switch($_FILES['video_file']['error']) {
             case UPLOAD_ERR_INI_SIZE:
                 $error = 'The uploaded file exceeds the upload_max_filesize directive';
                 break;
@@ -120,11 +155,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['access_token'])) {
     } else {
         try {
             error_log('Callback.php - Processing uploaded video file');
-            error_log('Callback.php - File info: ' . json_encode($_FILES['video']));
+            error_log('Callback.php - File info: ' . json_encode($_FILES['video_file']));
             
-            $videoPath = $_FILES['video']['tmp_name'];
-            $videoSize = $_FILES['video']['size'];
-            $videoType = $_FILES['video']['type'];
+            $videoPath = $_FILES['video_file']['tmp_name'];
+            $videoSize = $_FILES['video_file']['size'];
+            $videoType = $_FILES['video_file']['type'];
             
             // Validate file type
             $allowedTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo'];
