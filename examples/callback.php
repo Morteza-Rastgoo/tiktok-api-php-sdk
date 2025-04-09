@@ -1,6 +1,22 @@
 <?php
 
-// Set session cookie parameters for better persistence
+// Load environment variables
+$envFile = __DIR__ . '/../.env';
+if (file_exists($envFile)) {
+    $envVars = parse_ini_file($envFile);
+    if ($envVars === false) {
+        die('Error loading .env file');
+    }
+    foreach ($envVars as $key => $value) {
+        putenv("$key=$value");
+        $_ENV[$key] = $value;
+    }
+}
+
+// Get domain from environment
+$domain = getenv('APP_DOMAIN') ?: 'localhost';
+
+// Set session cookie parameters before any output
 ini_set('session.cookie_lifetime', 3600); // 1 hour
 ini_set('session.gc_maxlifetime', 3600); // 1 hour
 
@@ -15,6 +31,7 @@ session_set_cookie_params([
     'samesite' => 'Strict'
 ]);
 
+// Start session before any output
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 } else {
@@ -57,16 +74,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['access_token'])) {
     $uploadResult = null;
     $error = null;
 
-    if (isset($_FILES['video']) && $_FILES['video']['error'] === UPLOAD_ERR_OK) {
+    if (!isset($_FILES['video'])) {
+        $error = 'No video file was uploaded';
+    } else if ($_FILES['video']['error'] !== UPLOAD_ERR_OK) {
+        switch($_FILES['video']['error']) {
+            case UPLOAD_ERR_INI_SIZE:
+                $error = 'The uploaded file exceeds the upload_max_filesize directive';
+                break;
+            case UPLOAD_ERR_FORM_SIZE:
+                $error = 'The uploaded file exceeds the MAX_FILE_SIZE directive';
+                break;
+            case UPLOAD_ERR_PARTIAL:
+                $error = 'The uploaded file was only partially uploaded';
+                break;
+            case UPLOAD_ERR_NO_FILE:
+                $error = 'No file was uploaded';
+                break;
+            default:
+                $error = 'Unknown upload error';
+        }
+    } else {
         try {
             $videoPath = $_FILES['video']['tmp_name'];
+            $videoSize = $_FILES['video']['size'];
+            $videoType = $_FILES['video']['type'];
+            
+            // Validate file type
+            $allowedTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo'];
+            if (!in_array($videoType, $allowedTypes)) {
+                throw new \Exception('Invalid video format. Allowed formats: MP4, MOV, AVI');
+            }
+            
+            // Validate file size (max 50MB)
+            if ($videoSize > 50 * 1024 * 1024) {
+                throw new \Exception('Video file size must not exceed 50MB');
+            }
+            
             $uploadResult = $videoInstance->uploadVideo([
                 'video' => $videoPath,
                 'title' => $_POST['title'] ?? 'My TikTok Video',
                 'privacy_level' => 'SELF_ONLY' // For sandbox mode
             ]);
+            
+            if (!isset($uploadResult['data'])) {
+                throw new \Exception('Upload failed: Invalid response from TikTok API');
+            }
         } catch (\Exception $e) {
             $error = 'Error uploading video: ' . $e->getMessage();
+            error_log('TikTok upload error: ' . $e->getMessage());
         }
     }
 }
@@ -85,52 +140,48 @@ try {
     exit;
 }
 
-// State parameter validation with rotation
-if (!isset($_GET['state']) || !isset($_SESSION['tiktok_auth_state']) || $_GET['state'] !== $_SESSION['tiktok_auth_state']) {
+// State parameter validation
+if (!isset($_GET['state']) || empty($_GET['state']) || !isset($_SESSION['tiktok_auth_state']) || empty($_SESSION['tiktok_auth_state'])) {
     unset($_SESSION['tiktok_auth_state']);
-    header('Location: login_and_post.php?error=invalid_state');
+    header('Location: login_and_post.php?error=invalid_state&message=' . urlencode('Invalid or missing state parameter'));
     exit;
 }
 
-// Rotate state after successful validation
-$newState = bin2hex(random_bytes(16));
-$_SESSION['tiktok_auth_state'] = $newState;
-if (!isset($_GET['state']) || empty($_GET['state']) || !isset($_SESSION['tiktok_auth_state']) || empty($_SESSION['tiktok_auth_state'])) {
-    http_response_code(400);
-    $error = 'Invalid or missing state parameter. This could be due to an expired session or a CSRF attack.';
-} else if ($_GET['state'] !== $_SESSION['tiktok_auth_state']) {
-    http_response_code(400);
-    $error = 'State parameter mismatch. This could be due to an expired session or a CSRF attack.';
-    // For debugging
+if ($_GET['state'] !== $_SESSION['tiktok_auth_state']) {
     error_log('State mismatch: Session state: ' . $_SESSION['tiktok_auth_state'] . ', GET state: ' . $_GET['state']);
-} else {
-    // Only clear the state from session after successful token exchange
-    // This allows retries if token exchange fails
-    
-    // Get the authorization code from the callback
-    $authorizationCode = isset($_GET['code']) ? $_GET['code'] : '';
-    $domain = getenv('APP_DOMAIN') ?: 'tik.khosousi.com';
-    $redirectUri = 'https://' . $domain . '/examples/callback.php';
+    unset($_SESSION['tiktok_auth_state']);
+    header('Location: login_and_post.php?error=invalid_state&message=' . urlencode('State parameter mismatch'));
+    exit;
+}
 
-    if ($authorizationCode) {
-        // Exchange the code for an access token
-        $tokenResponse = $auth->getAccessTokenFromCode($authorizationCode, $redirectUri);
+// Get the authorization code from the callback
+$authorizationCode = isset($_GET['code']) ? $_GET['code'] : '';
+$domain = getenv('APP_DOMAIN') ?: 'tik.khosousi.com';
+$redirectUri = 'https://' . $domain . '/examples/callback.php';
+
+if ($authorizationCode) {
+    // Exchange the code for an access token
+    $tokenResponse = $auth->getAccessTokenFromCode($authorizationCode, $redirectUri);
+    
+    if (isset($tokenResponse['access_token'])) {
+        $success = true;
+        $accessToken = $tokenResponse['access_token'];
+        $_SESSION['access_token'] = $accessToken; // Store token in session
+        $expiresIn = isset($tokenResponse['expires_in']) ? $tokenResponse['expires_in'] : 'N/A';
+        $refreshToken = isset($tokenResponse['refresh_token']) ? $tokenResponse['refresh_token'] : 'N/A';
         
-        if (isset($tokenResponse['access_token'])) {
-            $success = true;
-            $accessToken = $tokenResponse['access_token'];
-            $_SESSION['access_token'] = $accessToken; // Store token in session
-            $expiresIn = isset($tokenResponse['expires_in']) ? $tokenResponse['expires_in'] : 'N/A';
-            $refreshToken = isset($tokenResponse['refresh_token']) ? $tokenResponse['refresh_token'] : 'N/A';
-            
-            // Clear the state from session only after successful token exchange
-            unset($_SESSION['tiktok_auth_state']);
-        } else {
-            $error = 'Failed to get access token. Please try again.';
-        }
+        // Generate new state for next authentication attempt
+        $_SESSION['tiktok_auth_state'] = bin2hex(random_bytes(16));
     } else {
-        $error = 'No authorization code received from TikTok.';
+        $error = 'Failed to get access token. Please try again.';
     }
+} else {
+    $error = 'No authorization code received from TikTok.';
+
+    
+    // Error has already been set above
+    header('Location: login_and_post.php?error=' . urlencode($error));
+    exit;
 }
 
 ?><!DOCTYPE html>
