@@ -9,7 +9,7 @@ services:
     environment:
       - TIKTOK_CLIENT_KEY=${TIKTOK_CLIENT_KEY}
       - TIKTOK_CLIENT_SECRET=${TIKTOK_CLIENT_SECRET}
-      - APP_DOMAIN=tik.khosousi.com
+      - APP_DOMAIN=${APP_DOMAIN}
     command: >
       sh -c "a2enmod rewrite &&
              docker-php-ext-install pdo pdo_mysql &&
