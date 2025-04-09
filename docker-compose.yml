@@ -1,0 +1,23 @@
+
+services:
+  web:
+    image: php:8.0-apache
+    ports:
+      - "4435:80"
+    volumes:
+      - .:/var/www/html
+    environment:
+      - TIKTOK_CLIENT_KEY=${TIKTOK_CLIENT_KEY}
+      - TIKTOK_CLIENT_SECRET=${TIKTOK_CLIENT_SECRET}
+      - APP_DOMAIN=tik.khosousi.com
+    command: >
+      sh -c "a2enmod rewrite &&
+             docker-php-ext-install pdo pdo_mysql &&
+             apache2-foreground"
+    working_dir: /var/www/html
+    networks:
+      - tiktok-network
+
+networks:
+  tiktok-network:
+    driver: bridge
