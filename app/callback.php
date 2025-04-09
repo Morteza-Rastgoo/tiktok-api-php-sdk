@@ -1,4 +1,5 @@
 <?php
+
 // Enable output buffering to prevent premature output
 ob_start();
 
@@ -108,7 +109,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['access_token'])) {
     // Handle both file upload and URL cases
     if (!empty($videoUrl)) {
         try {
-            error_log('Callback.php - Processing video URL');
+            error_log('Callback.php - Initializing video upload from URL');
+            error_log('Callback.php - Video URL: ' . $videoUrl);
             
             // Validate URL format
             if (!filter_var($videoUrl, FILTER_VALIDATE_URL)) {
@@ -118,14 +120,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['access_token'])) {
             // Download video from URL
             $tempFile = tempnam(sys_get_temp_dir(), 'tiktok_');
             file_put_contents($tempFile, file_get_contents($videoUrl));
-            
+            error_log('Callback.php - Video downloaded to temporary file: ' . $tempFile);
             $videoPath = $tempFile;
             $videoSize = filesize($tempFile);
             $videoType = mime_content_type($tempFile);
-            
+            error_log('Callback.php - Video size: ' . $videoSize . ', Video type: ' . $videoType);
         } catch (\Exception $e) {
             $error = 'Error processing video URL: ' . $e->getMessage();
             error_log('Callback.php - URL processing error: ' . $e->getMessage());
+            error_log('Callback.php - Stack trace: ' . $e->getTraceAsString());
         }
     } else if (!isset($_FILES['video_file'])) {
         $error = 'No video file or URL was provided';
@@ -176,13 +179,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['access_token'])) {
                 'title' => $_POST['title'] ?? 'My TikTok Video',
                 'privacy_level' => 'SELF_ONLY' // For sandbox mode
             ]);
-            
             error_log('Callback.php - TikTok API response: ' . json_encode($uploadResult));
-            
             if (!isset($uploadResult['data'])) {
                 throw new \Exception('Upload failed: Invalid response from TikTok API');
             }
-            
             error_log('Callback.php - Video uploaded successfully');
         } catch (\Exception $e) {
             $error = 'Error uploading video: ' . $e->getMessage();
