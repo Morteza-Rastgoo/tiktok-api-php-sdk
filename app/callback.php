@@ -54,6 +54,19 @@ use TikTok\Authentication\Authentication;
 use TikTok\Video\Video;
 
 // Check for error parameters
+
+// Get video file or URL from request
+$videoUrl = isset($_POST['video_url']) ? trim($_POST['video_url']) : '';
+$videoFile = isset($_FILES['video_file']) ? $_FILES['video_file'] : null;
+
+// Validate input
+if (!empty($videoUrl) && !filter_var($videoUrl, FILTER_VALIDATE_URL)) {
+    $error = 'Invalid video URL format';
+} elseif ($videoFile && $videoFile['error'] !== UPLOAD_ERR_OK) {
+    $error = 'File upload error: ' . $videoFile['error'];
+} elseif (!$videoUrl && !$videoFile) {
+    $error = 'Please provide either a video URL or upload a file';
+}
 if (isset($_GET['error'])) {
     $error = $_GET['error'];
     $errorType = isset($_GET['error_type']) ? $_GET['error_type'] : '';
@@ -157,7 +170,7 @@ if ($_GET['state'] !== $_SESSION['tiktok_auth_state']) {
 // Get the authorization code from the callback
 $authorizationCode = isset($_GET['code']) ? $_GET['code'] : '';
 $domain = getenv('APP_DOMAIN') ?: 'tik.khosousi.com';
-$redirectUri = 'https://' . $domain . '/examples/callback.php';
+$redirectUri = 'https://' . $domain . '/app/callback.php';
 
 if ($authorizationCode) {
     // Exchange the code for an access token
@@ -270,12 +283,16 @@ if ($authorizationCode) {
                 <h3>Upload Video (Sandbox Mode)</h3>
                 <form method="POST" enctype="multipart/form-data">
                     <div class="form-group">
-                        <label for="video">Choose Video File:</label>
-                        <input type="file" id="video" name="video" accept="video/*" required>
-                    </div>
-                    <div class="form-group">
                         <label for="title">Video Title:</label>
                         <input type="text" id="title" name="title" placeholder="Enter video title" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="video_url">Video URL (or upload file below):</label>
+                        <input type="url" id="video_url" name="video_url" placeholder="Enter video URL">
+                    </div>
+                    <div class="form-group">
+                        <label for="video_file">Or Upload Video File:</label>
+                        <input type="file" id="video_file" name="video_file" accept="video/mp4,video/quicktime">
                     </div>
                     <button type="submit" class="submit-btn">Upload Video</button>
                 </form>

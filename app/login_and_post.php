@@ -58,11 +58,30 @@ error_log('Generated new state: ' . $state);
 
 // Set up the authentication parameters
 $domain = getenv('APP_DOMAIN') ?: 'tik.khosousi.com';
-$redirectUri = 'https://' . $domain . '/examples/callback.php';
+$redirectUri = 'https://' . $domain . '/app/callback.php';
 $scope = 'user.info.basic,video.upload,video.publish';
 
 // Get the authentication URL with sandbox mode
 $authUrl = $auth->getAuthenticationUrl($redirectUri, $scope, $state);
+
+// Handle the callback to exchange the code for an access token
+if (isset($_GET['code'])) {
+    try {
+        $accessToken = $auth->getAccessTokenFromCode($_GET['code'], $redirectUri);
+        
+        // Store the access token in the session for future use
+        $_SESSION['tiktok_access_token'] = $accessToken;
+        
+        // Log the access token for debugging
+        error_log('Access Token: ' . json_encode($accessToken));
+        
+        // Redirect to a success page or the main application
+        header('Location: /app/success.php');
+        exit;
+    } catch (\Exception $e) {
+        die('Error: Failed to exchange code for access token. ' . $e->getMessage());
+    }
+}
 
 // Output a simple HTML page with the auth link
 ?><!DOCTYPE html>
