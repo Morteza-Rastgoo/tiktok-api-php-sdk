@@ -1,4 +1,15 @@
 <?php
+// Set PHP upload limits for video files
+ini_set('upload_max_filesize', '50M');
+ini_set('post_max_size', '52M');
+
+// Enable output buffering to prevent premature output
+ob_start();
+
+// Standardized session configuration - must be first
+ini_set('session.cookie_lifetime', 3600); // 1 hour
+ini_set('session.gc_maxlifetime', 3600); // 1 hour
+session_name('tiktok_sdk_session');
 
 // Load environment variables
 $envFile = __DIR__ . '/../.env';
@@ -16,12 +27,7 @@ if (file_exists($envFile)) {
 // Get domain from environment
 $domain = getenv('APP_DOMAIN') ?: 'localhost';
 
-// Set session cookie parameters before any output
-ini_set('session.cookie_lifetime', 3600); // 1 hour
-ini_set('session.gc_maxlifetime', 3600); // 1 hour
-
-// Standardized session configuration
-session_name('tiktok_sdk_session');
+// Configure session parameters
 session_set_cookie_params([
     'lifetime' => 3600,
     'path' => '/',
@@ -83,12 +89,16 @@ if (isset($_GET['error'])) {
 
 // Handle video upload if form was submitted
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['access_token'])) {
+    error_log('Callback.php - Starting video upload process');
+    error_log('Callback.php - Session data at upload start: ' . json_encode($_SESSION));
+    
     $videoInstance = new Video(['access_token' => $_SESSION['access_token']]);
     $uploadResult = null;
     $error = null;
 
     if (!isset($_FILES['video'])) {
         $error = 'No video file was uploaded';
+        error_log('Callback.php - No video file was uploaded');
     } else if ($_FILES['video']['error'] !== UPLOAD_ERR_OK) {
         switch($_FILES['video']['error']) {
             case UPLOAD_ERR_INI_SIZE:
@@ -106,8 +116,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['access_token'])) {
             default:
                 $error = 'Unknown upload error';
         }
+        error_log('Callback.php - File upload error: ' . $error);
     } else {
         try {
+            error_log('Callback.php - Processing uploaded video file');
+            error_log('Callback.php - File info: ' . json_encode($_FILES['video']));
+            
             $videoPath = $_FILES['video']['tmp_name'];
             $videoSize = $_FILES['video']['size'];
             $videoType = $_FILES['video']['type'];
@@ -115,26 +129,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['access_token'])) {
             // Validate file type
             $allowedTypes = ['video/mp4', 'video/quicktime', 'video/x-msvideo'];
             if (!in_array($videoType, $allowedTypes)) {
+                error_log('Callback.php - Invalid video format: ' . $videoType);
                 throw new \Exception('Invalid video format. Allowed formats: MP4, MOV, AVI');
             }
             
             // Validate file size (max 50MB)
             if ($videoSize > 50 * 1024 * 1024) {
+                error_log('Callback.php - Video file size exceeds limit: ' . $videoSize);
                 throw new \Exception('Video file size must not exceed 50MB');
             }
             
+            error_log('Callback.php - Attempting to upload video to TikTok API');
             $uploadResult = $videoInstance->uploadVideo([
                 'video' => $videoPath,
                 'title' => $_POST['title'] ?? 'My TikTok Video',
                 'privacy_level' => 'SELF_ONLY' // For sandbox mode
             ]);
             
+            error_log('Callback.php - TikTok API response: ' . json_encode($uploadResult));
+            
             if (!isset($uploadResult['data'])) {
                 throw new \Exception('Upload failed: Invalid response from TikTok API');
             }
+            
+            error_log('Callback.php - Video uploaded successfully');
         } catch (\Exception $e) {
             $error = 'Error uploading video: ' . $e->getMessage();
-            error_log('TikTok upload error: ' . $e->getMessage());
+            error_log('Callback.php - TikTok upload error: ' . $e->getMessage());
+            error_log('Callback.php - Stack trace: ' . $e->getTraceAsString());
         }
     }
 }

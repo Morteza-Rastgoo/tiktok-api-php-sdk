@@ -44,9 +44,13 @@ use TikTok\Post\Post;
 
 // Check if we have an access token
 if (!isset($_SESSION['access_token'])) {
+    error_log('post_video_from_url.php - No access token found in session');
+    error_log('post_video_from_url.php - Session data: ' . json_encode($_SESSION));
     header('Location: login_and_post.php?error=no_token');
     exit;
 }
+
+error_log('post_video_from_url.php - Valid access token found in session');
 
 // Initialize Post instance with access token
 $config = array('access_token' => $_SESSION['access_token']);
@@ -57,11 +61,19 @@ $videoUrl = isset($_POST['video_url']) ? trim($_POST['video_url']) : '';
 $videoFile = isset($_FILES['video_file']) ? $_FILES['video_file'] : null;
 
 // Validate input
-if (!empty($videoUrl) && !filter_var($videoUrl, FILTER_VALIDATE_URL)) {
-    $error = 'Invalid video URL format';
+if (!empty($videoUrl)) {
+    if (!filter_var($videoUrl, FILTER_VALIDATE_URL)) {
+        error_log('Invalid video URL format: ' . $videoUrl);
+        $error = 'Invalid video URL format';
+    } elseif (!preg_match('/\.(mp4|mov|avi|mpeg|mpg|webm)$/i', $videoUrl)) {
+        error_log('Unsupported video format in URL: ' . $videoUrl);
+        $error = 'URL must point to a video file (mp4, mov, avi, mpeg, mpg, webm)';
+    }
 } elseif ($videoFile && $videoFile['error'] !== UPLOAD_ERR_OK) {
+    error_log('File upload error: ' . $videoFile['error']);
     $error = 'File upload error: ' . $videoFile['error'];
 } elseif (!$videoUrl && !$videoFile) {
+    error_log('No video source provided');
     $error = 'Please provide either a video URL or upload a file';
 }
 
@@ -71,6 +83,11 @@ $publishId = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$error)) {
     try {
+        error_log('post_video_from_url.php - Starting video upload process');
+        error_log('post_video_from_url.php - Video source: ' . ($videoFile ? 'FILE_UPLOAD' : 'PULL_FROM_URL'));
+        error_log('post_video_from_url.php - Request data: ' . json_encode($_POST));
+        error_log('post_video_from_url.php - File data: ' . json_encode($_FILES));
+        
         // Set up common post parameters
         $postInfo = array(
             'post_info' => array(
@@ -83,15 +100,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$error)) {
             ),
             'source_info' => array(
                 'source' => $videoFile ? 'FILE_UPLOAD' : 'PULL_FROM_URL',
-                'video_url' => $videoUrl
+                'video_url' => $videoUrl,
+                'video_size' => $videoFile ? $videoFile['size'] : 0,
+                'chunk_size' => $videoFile ? $videoFile['size'] : 0,
+                'total_chunk_count' => $videoFile ? 1 : 0
             )
         );
+        
+        error_log('Post info prepared: ' . json_encode($postInfo));
 
         // Add file-specific parameters if uploading a file
         if ($videoFile) {
             $postInfo['source_info']['video_size'] = $videoFile['size'];
             $postInfo['source_info']['chunk_size'] = $videoFile['size'];
             $postInfo['source_info']['total_chunk_count'] = 1;
+        } else {
+            // Ensure video_url is properly set for URL uploads
+            $postInfo['source_info']['video_url'] = $videoUrl;
         }
         // Make the post request
         $response = $post->publish($postInfo);
@@ -100,13 +125,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!$error)) {
         if (isset($response['data']['publish_id'])) {
             $success = true;
             $publishId = $response['data']['publish_id'];
+            error_log('post_video_from_url.php - Video upload successful. Publish ID: ' . $publishId);
+            error_log('post_video_from_url.php - Full API response: ' . json_encode($response));
         } else {
             $error = isset($response['error']['message']) 
                 ? $response['error']['message'] 
                 : 'Upload failed. Please try again.';
+            error_log('Video upload failed. Response: ' . json_encode($response));
         }
     } catch (\Exception $e) {
         $error = 'Error uploading video: ' . $e->getMessage();
+        error_log('Exception during video upload: ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
     }
 }
 ?>
