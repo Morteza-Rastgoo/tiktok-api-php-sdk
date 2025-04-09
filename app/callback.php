@@ -1,8 +1,4 @@
 <?php
-// Set PHP upload limits for video files
-ini_set('upload_max_filesize', '50M');
-ini_set('post_max_size', '52M');
-
 // Enable output buffering to prevent premature output
 ob_start();
 
@@ -44,8 +40,8 @@ if (session_status() === PHP_SESSION_NONE) {
     session_regenerate_id(true);
 }
 
-// Initialize or validate session state
-if (empty($_SESSION['tiktok_auth_state'])) {
+// Initialize session state from existing or create new
+if (!isset($_SESSION['tiktok_auth_state'])) {
     $_SESSION['tiktok_auth_state'] = bin2hex(random_bytes(16));
     error_log('Callback.php - Initialized new auth state: ' . $_SESSION['tiktok_auth_state']);
 }
@@ -219,7 +215,8 @@ if (!isset($_GET['state']) || empty($_GET['state']) || !isset($_SESSION['tiktok_
 
 if ($_GET['state'] !== $_SESSION['tiktok_auth_state']) {
     error_log('State mismatch: Session state: ' . $_SESSION['tiktok_auth_state'] . ', GET state: ' . $_GET['state']);
-    unset($_SESSION['tiktok_auth_state']);
+    // Regenerate state instead of unsetting to prevent race conditions
+    $_SESSION['tiktok_auth_state'] = bin2hex(random_bytes(16));
     header('Location: login_and_post.php?error=invalid_state&message=' . urlencode('State parameter mismatch'));
     exit;
 }
